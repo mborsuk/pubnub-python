@@ -1631,3 +1631,67 @@ class PubnubTornado(PubnubCoreAsync):
             pass
 
         return abort
+
+    def publish_future(self, channel, message):
+        message = self.encrypt(message)
+
+        ## Send Message
+        return self._request_future({"urlcomponents": [
+            'publish',
+            self.publish_key,
+            self.subscribe_key,
+            '0',
+            channel,
+            '0',
+            message ],
+            'urlparams': {'auth': self.auth_key, 'pnsdk' : self.pnsdk}})
+
+    def _request_future(self, request, single=False,
+                        timeout=5, connect_timeout=5):
+
+        url = self.getUrl(request)
+        request = tornado.httpclient.HTTPRequest(
+            url, 'GET',
+            self.headers,
+            connect_timeout=connect_timeout,
+            request_timeout=timeout)
+
+        if single is True:
+            id = time.time()
+            self.id = id
+
+        return self.http.fetch(request=request)
+
+    def get_response_from_future(self, future):
+        response = future.result()
+
+        if single is True:
+            if not id == self.id:
+                return None
+
+        body = response._get_body()
+
+        if body is None:
+            return
+
+        def handle_exc(*args):
+            return True
+        if response.error is not None:
+            with ExceptionStackContext(handle_exc):
+                if response.code in [403, 401]:
+                    response.rethrow()
+                else:
+                    raise Exception(response.reason)
+
+        try:
+            data = json.loads(body)
+        except TypeError as e:
+            try:
+                data = json.loads(body.decode("utf-8"))
+            except ValueError as ve:
+                raise Exception('json decode error')
+
+        if 'error' in data and 'status' in data and 'status' != 200:
+                raise Exception(data)
+
+        return get_data_for_user(data)
